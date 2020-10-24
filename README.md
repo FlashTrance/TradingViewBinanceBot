@@ -1,5 +1,5 @@
 # Trading View Binance Bot
-WIP project. Messy and untested atm, just threw this together in a day. Handles POST requests from [TradingView](https://www.tradingview.com/) alert webhooks and uses them to trigger [Binance API](https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md) calls to make buy/sell orders (and set stop losses) based on any simple "crossing" strategy on short timeframes (i.e. when EMA 10 crosses up EMA 20, it's a "bullish" cross, so we BUY and wait for a "bearish" cross).
+WIP project. Messy and untested atm. Handles POST requests from [TradingView](https://www.tradingview.com/) alert webhooks and uses them to trigger [Binance API](https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md) calls to make buy/sell orders (and set stop losses) based on any simple "crossing" strategy on short timeframes (i.e. when EMA 10 crosses up EMA 20, it's a "bullish" cross, so we BUY and wait for a "bearish" cross).
 
 Prerequisites
 -------------
@@ -10,9 +10,9 @@ Prerequisites
 
 To-Do
 ------
-* Have not been taking "stepSize" into account, so buying back the base currency is broken. Will need to convert quote to base and then round it to the stepSize.
 * Clean up code and make it less redundant.
 * Thoroughly test functionality/debug by running program for a few days and checking out console logs and Binance order history.
+* Maybe adjust the stop loss percentage based on the daily trend or something.
+* <del>Have not been taking "stepSize" into account, so buying back the base currency is broken. Will need to convert quote to base and then round it to the stepSize.</del>
 * <del>Abstract the "BTC" stuff out and replace it with another value from the TradingView alerts so this works with any trading pair.</del>
 * <del>Take out references to "EMA"s, since this isn't actually limited to an EMA crossing strategy.</del>
-* Maybe adjust the stop loss percentage based on the daily trend or something.

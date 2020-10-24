@@ -38,6 +38,24 @@ const getCurrentPrice = function getCurrentPrice(symbol)
     }).catch( (err) => { console.error(err); });
 }
 
+// GET EXCHANGE INFO (Used to get stepSize)
+const getExchangeInfo = function getExchangeInfo()
+{
+    // Wrap GET in a Promise so we can respond to the resolved value
+    return new Promise( (resolve, reject) => 
+    {
+        // Get current price for provided ticker
+        axios.get(BASE_URL + "/exchangeInfo").then( (res, err) => 
+        {
+            if (err) { reject(err); }
+            else 
+            { 
+                resolve(res.data)
+            }
+        });
+    }).catch( (err) => { console.error(err); });
+}
+
 
 ////////////
 // SIGNED //
@@ -70,17 +88,12 @@ const postOrder = function postOrder(symbol, side, type, timeInForce, quantity, 
             else 
             { 
                 // Query string parameters common across order types 
-                let params = "symbol=" + symbol + "&side=" + side + "&type=" + type + "&recvWindow=" + recvWindow + "&timestamp=" + res.data["serverTime"];
+                let params = "symbol=" + symbol + "&side=" + side + "&type=" + type + "&quantity=" + quantity + "&recvWindow=" + recvWindow + "&timestamp=" + res.data["serverTime"];
                 
-                // Adjust query string based on order type (MARKET vs STOP_LOSS_LIMIT)
-                if (type == "MARKET")
+                // Adjust query string for STOP_LOSS_LIMIT order type
+                if (type === "STOP_LOSS_LIMIT")
                 {
-                    if (side == "SELL")     { params += "&quantity=" + quantity; }
-                    else if (side == "BUY") { params += "&quoteOrderQty=" + quantity; }
-                }
-                else
-                {
-                    params += "&timeInForce=" + timeInForce + "&quantity=" + quantity + "&price="  + price + "&stopPrice=" + stopPrice;
+                    params += "&timeInForce=" + timeInForce + "&price="  + price + "&stopPrice=" + stopPrice;
                 }
                 let signature = getSignature(params, API_SECRET); 
                 let url = BASE_URL + "/order" + "?" + params + "&signature=" + signature;
@@ -108,7 +121,7 @@ const postOrder = function postOrder(symbol, side, type, timeInForce, quantity, 
                 req.send();
             }
         });
-    }).catch( (err) => { console.error(err); }); // Log "err" here for debugging
+    }).catch( (err) => { }); // Log "err" here for debugging
 };
 
 
@@ -269,4 +282,4 @@ function getSignature(parameters, secret)
 
 
 // EXPORT FUNCTIONS
-module.exports = { getCurrentPrice, postOrder, cancelOrder, getAccountInfo, getOpenOrders, getSignature };
+module.exports = { getCurrentPrice, getExchangeInfo, postOrder, cancelOrder, getAccountInfo, getOpenOrders, getSignature };

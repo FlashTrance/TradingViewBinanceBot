@@ -8,10 +8,13 @@ const binanceAPI = require("./binance-API-wrapper.js");
 const PORT = process.env.PORT || 3000;
 
 const STOP_LIMIT_PERCENT = 0.65; // Percentage above/below current price to set stop loss
-const RECV_WINDOW = 20000;       // Time (ms) to wait for response from Binance server
-const LOT_SIZE_QTY = 6;          // Highest precision Binance allows for quantities
-const LOT_SIZE_PRICE = 6;        // Highest precision Binance allows for price/limit
-const QTY_FACTOR = 20;           // Total balance is divided by this when setting quantity on orders
+const MAJOR_STEP_SIZES = {       // Step sizes for major quote assets
+    "BTC": 0.000001, 
+    "ETH": 0.000001, 
+    "USDT": 0.01 
+};
+const RECV_WINDOW = 20000;       // Time (ms) to wait for response from Binance server       
+const QTY_FACTOR = 30;           // Total balance is divided by this when setting quantity on orders
 
 var balances = [];
 
@@ -24,6 +27,8 @@ app.use(bodyParser.json());
 // GET CURRENT ACCOUNT BALANCES
 updateBalances().then( (balanceRes) => 
 {
+    balances = balanceRes;
+
     // START REST SERVER
     app.listen(PORT, () => 
     {
@@ -40,8 +45,8 @@ updateBalances().then( (balanceRes) =>
         { 
             // Retrieve data from request body
             const time_interval = req.body.time;
-            const baseCur = req.body.base;
-            const quoteCur = req.body.quote;
+            const baseCur = req.body.base.toString();
+            const quoteCur = req.body.quote.toString();
             let crossType = "", found = "";
 
             // INDICATOR CROSS ("BULL" or "BEAR")
@@ -150,35 +155,41 @@ updateBalances().then( (balanceRes) =>
 });
 
 
+
+///////////////
 // FUNCTIONS //
-
-// getBalanceBySymbol() - Retrieve Binance account balance for the provided symbol
-function getBalanceBySymbol(symbol)
-{
-    return parseFloat(balances.find( (elem) => { return elem.asset == symbol; }).free); 
-}
-
+///////////////
 
 // placeOrderAndStopLoss() - Place the appropriate buy/sell Market order and Stop Limit order
-function placeOrderAndStopLoss(baseCur, quoteCur, currentPrice, marketSide)
+async function placeOrderAndStopLoss(baseCur, quoteCur, currentPrice, marketSide)
 {
     let priceLimit = 0.0, stopLimit = 0.0, market_qty = 0.0, limit_qty = 0.0;
+    let stepSizeBase = 0, stepSizeQuote = 0, stepBaseDec = 0, stepQuoteDec = 0;;
     let stopSide = "";
+
+    // Get stepSize of base and quote assets so we know what precision to use in our order
+    if (!(baseCur in MAJOR_STEP_SIZES)) { stepSizeBase = await getStepSize(baseCur, quoteCur); }
+    else                                { stepSizeBase = MAJOR_STEP_SIZES[baseCur]; }
+    stepSizeQuote = MAJOR_STEP_SIZES[quoteCur];
+
+    // Get stepSize scales
+    stepBaseDec = getNumDecimals(stepSizeBase);
+    stepQuoteDec = getNumDecimals(stepSizeQuote);
 
     // Setup order values based on the market side (and consequently the "crossing" type)
     if (marketSide === "SELL")     
     { 
         stopSide = "BUY"; 
-        market_qty = (getBalanceBySymbol(baseCur) / QTY_FACTOR).toFixed(LOT_SIZE_QTY); 
+        market_qty = truncateFloat((getBalanceBySymbol(baseCur) / QTY_FACTOR), stepBaseDec);
         priceLimit = currentPrice + ((currentPrice / 100.0) * STOP_LIMIT_PERCENT);
-        stopLimit = (priceLimit - 0.00001).toFixed(LOT_SIZE_PRICE);
+        stopLimit = truncateFloat((priceLimit - stepSizeQuote), stepQuoteDec);
     }
     else if (marketSide === "BUY") 
     { 
         stopSide = "SELL"; 
-        market_qty = (getBalanceBySymbol(quoteCur) / QTY_FACTOR).toFixed(LOT_SIZE_QTY);
+        market_qty = truncateFloat((getBalanceBySymbol(quoteCur) / currentPrice), stepBaseDec);
         priceLimit = currentPrice - ((currentPrice / 100.0) * STOP_LIMIT_PERCENT);
-        stopLimit = (priceLimit + 0.00001).toFixed(LOT_SIZE_PRICE);
+        stopLimit = truncateFloat((priceLimit + stepSizeQuote), stepQuoteDec);
     }
 
     // Put in a MARKET order at current price
@@ -186,25 +197,29 @@ function placeOrderAndStopLoss(baseCur, quoteCur, currentPrice, marketSide)
     {
         if (sellRes) 
         {  
+            // Get new account balance information after placing Market order
             updateBalances().then( (balanceRes) => 
             {
                 balances = balanceRes;
-                if (marketSide === "SELL") { limit_qty = (getBalanceBySymbol(quoteCur) / QTY_FACTOR).toFixed(LOT_SIZE_QTY); }
-                else                       { limit_qty = (getBalanceBySymbol(baseCur) / QTY_FACTOR).toFixed(LOT_SIZE_QTY); }
+
+                // Note: For BUY-side Stop Limit orders, we need to convert quote currency amount into base currency amount
+                if (marketSide === "SELL") { limit_qty = truncateFloat((getBalanceBySymbol(quoteCur) / currentPrice), stepBaseDec); }
+                else                       { limit_qty = truncateFloat((getBalanceBySymbol(baseCur) / QTY_FACTOR), stepBaseDec); }
 
                 // Place a Stop Limit order based on STOP_LIMIT_PERCENT
-                priceLimit = priceLimit.toFixed(LOT_SIZE_PRICE);
-                console.info("Limit Qty: " + limit_qty + ", Market Side: " + marketSide + ", Price Limit: " + priceLimit);
+                priceLimit = truncateFloat(priceLimit, stepQuoteDec);
                 binanceAPI.postOrder(baseCur + quoteCur, stopSide, "STOP_LOSS_LIMIT", "GTC", limit_qty, priceLimit, stopLimit, RECV_WINDOW).then( (limitRes) => 
                 { 
-                    if (limitRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Placed a " + marketSide + " order @ " + currentPrice + ". Set Stop Loss @ " + priceLimit); }
+                    if (limitRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Placed a " + marketSide + " order @ ~" + currentPrice + ". Set Stop Loss @ " + priceLimit); }
 
-                    // If the limit order fails to place for any reason, try placing the opposite Market order to be on the safe side
-                    binanceAPI.postOrder(baseCur + quoteCur, stopSide, "MARKET", "", market_qty, 0, 0, RECV_WINDOW).then( (panicRes) => 
+                    // If the limit order fails, rebuy/sell to be on the safe side
+                    else
                     {
-                        if (panicRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Failed to place Stop Limit order! Rebought/sold Market order @ " + priceLimit); }
-                    });
-
+                        binanceAPI.postOrder(baseCur + quoteCur, stopSide, "MARKET", "", market_qty, 0, 0, RECV_WINDOW).then( (panicRes) => 
+                        {
+                            if (panicRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Failed to place Stop Limit order! Rebought/sold Market order."); }
+                        });
+                    }
                 });
             });
         }
@@ -225,6 +240,13 @@ function cancelNoProfitOrder(baseCur, quoteCur, orderId)
 }
 
 
+// getBalanceBySymbol() - Retrieve Binance account balance for the provided symbol
+function getBalanceBySymbol(symbol)
+{
+    return parseFloat(balances.find( (elem) => { return elem.asset == symbol; }).free); 
+}
+
+
 // updateBalances() - Retrieve the current balance info from Binance
 function updateBalances()
 {
@@ -232,8 +254,42 @@ function updateBalances()
     {
         binanceAPI.getAccountInfo(RECV_WINDOW).then( (res) => 
         { 
-            if (res) { resolve(res.balances);  }
-            else {reject ("Failed to get account balances."); }
+            if (res) { resolve(res.balances); }
+            else { reject ("Failed to get account balances."); }
         });
-    });
+    }).catch( (err) => { console.error(err); });
+}
+
+
+// getStepSize() - Return the stepSize for a base asset
+function getStepSize(baseCur, quoteCur)
+{
+    return new Promise( (resolve, reject) => 
+    {
+        binanceAPI.getExchangeInfo().then( (res) => 
+        {
+            if (res)
+            {
+                let symbol_info = res.symbols.find( (trading_pair) => { return trading_pair.symbol == baseCur + quoteCur; });
+                let stepSize = symbol_info.filters.find( (filter) => { return filter.filterType == "LOT_SIZE"; }).stepSize;
+                resolve(stepSize);
+            }
+            else { reject("Failed to get step size."); }
+        })
+    }).catch( (err) => { console.error(err); });
+}
+
+
+// getNumDecimals() - Return number of decimals in a floating point number
+function getNumDecimals(num)
+{
+    return parseFloat(num).toString().split(".")[1].length;
+}
+
+
+// truncateFloat() - Truncates float to specified number of decimals without rounding
+function truncateFloat(num, decNum)
+{
+    let re = new RegExp('^-?\\d+(?:\.\\d{0,' + (decNum || -1) + '})?'); // Credit: guya, Stack Overflow
+    return parseFloat(num.toString().match(re)[0]);
 }
