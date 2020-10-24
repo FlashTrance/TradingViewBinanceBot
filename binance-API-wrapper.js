@@ -44,7 +44,7 @@ const getExchangeInfo = function getExchangeInfo()
     // Wrap GET in a Promise so we can respond to the resolved value
     return new Promise( (resolve, reject) => 
     {
-        // Get current price for provided ticker
+        // Get exchange info
         axios.get(BASE_URL + "/exchangeInfo").then( (res, err) => 
         {
             if (err) { reject(err); }
@@ -71,11 +71,11 @@ const postOrder = function postOrder(symbol, side, type, timeInForce, quantity, 
     // @ params
     // symbol: Trading symbol
     // side: "BUY" or "SELL"
-    // type: "STOP_LOSS_LIMIT" (for a BUY) or "TAKE_PROFIT_LIMIT" (for a SELL) or "MARKET"
+    // type: "STOP_LOSS_LIMIT" or "MARKET"
     // timeInForce: "GTC", "IOC", "FOK"
-    // quantity: Number of contracts (quantity in USD)
-    // price: Order price
-    // stopPrice: Used with STOP_LOSS_LIMIT order
+    // quantity: Amount of base asset
+    // price: Where to set "Limit" in Stop Limit order
+    // stopPrice: Where to set "Stop" in Stop Limit order
     // recvWindow: How long to wait for a response from the server
 
     // Wrap POST in a Promise so we can respond to the resolved value
