@@ -98,7 +98,7 @@ binanceAPI.getAccountInfo(RECV_WINDOW).then( (res, err) =>
                                         });
                                     }
 
-                                    // Not in profit, cross occured between out Stop Limit and the price we sold at
+                                    // Not in profit, cross occured between our Stop Limit and the price we sold at
                                     else
                                     {
                                         // Cancel the old BUY Stop Limit and wait for the next BEARISH cross
@@ -193,7 +193,7 @@ binanceAPI.getAccountInfo(RECV_WINDOW).then( (res, err) =>
                                         });
                                     }
 
-                                    // Not in profit, cross occured between out Stop Limit and the price we sold at
+                                    // Not in profit, cross occured between our Stop Limit and the price we sold at
                                     else
                                     {
                                         // Cancel the old SELL Stop Limit and wait for the next BULLISH cross
