@@ -69,26 +69,18 @@ const postOrder = function postOrder(symbol, side, type, timeInForce, quantity, 
             if (err) { reject(err); }
             else 
             { 
-                // Setup query string based on order type
-                let params = "";
+                // Query string parameters common across order types 
+                let params = "symbol=" + symbol + "&side=" + side + "&type=" + type + "&recvWindow=" + recvWindow + "&timestamp=" + res.data["serverTime"];
+                
+                // Adjust query string based on order type (MARKET vs STOP_LOSS_LIMIT)
                 if (type == "MARKET")
                 {
-                    if (side == "SELL")
-                    {
-                        params = "symbol=" + symbol + "&side=" + side + "&type=" + type + "&quantity=" + quantity + "&recvWindow=" 
-                        + recvWindow + "&timestamp=" + res.data["serverTime"];
-                    }
-                    else if (side == "BUY") // Uses quoteOrderQty instead of quantity for ease of use
-                    {
-                        params = "symbol=" + symbol + "&side=" + side + "&type=" + type + "&quoteOrderQty=" + quantity + "&recvWindow=" 
-                        + recvWindow + "&timestamp=" + res.data["serverTime"];
-                    }
+                    if (side == "SELL")     { params += "&quantity=" + quantity; }
+                    else if (side == "BUY") { params += "&quoteOrderQty=" + quantity; }
                 }
-                else // Assuming for this program we're putting in a Stop Loss order if not a Market order
+                else
                 {
-                    params = "symbol=" + symbol + "&side=" + side + "&type=" + type + "&timeInForce=" + timeInForce + "&quantity=" 
-                    + quantity + "&price="  + price + "&stopPrice=" + stopPrice + "&recvWindow=" + recvWindow 
-                    + "&timestamp=" + res.data["serverTime"];
+                    params += "&timeInForce=" + timeInForce + "&quantity=" + quantity + "&price="  + price + "&stopPrice=" + stopPrice;
                 }
                 let signature = getSignature(params, API_SECRET); 
                 let url = BASE_URL + "/order" + "?" + params + "&signature=" + signature;
@@ -116,7 +108,7 @@ const postOrder = function postOrder(symbol, side, type, timeInForce, quantity, 
                 req.send();
             }
         });
-    }).catch( (err) => { }); // Log "err" here for debugging
+    }).catch( (err) => { console.error(err) }); // Log "err" here for debugging
 };
 
 
@@ -137,7 +129,7 @@ const cancelOrder = function cancelOrder(symbol, orderId, recvWindow)
             if (err) { reject(err); }
             else 
             { 
-                // Setup query string based on order type
+                // Setup query string
                 params = "symbol=" + symbol + "&orderId=" + orderId + "&recvWindow=" + recvWindow + "&timestamp=" + res.data["serverTime"];
                 let signature = getSignature(params, API_SECRET);
                 let url = BASE_URL + "/order" + "?" + params + "&signature=" + signature;

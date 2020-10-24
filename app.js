@@ -7,9 +7,11 @@ const binanceAPI = require("./binance-API-wrapper.js");
 // GLOBAL
 const PORT = process.env.PORT || 3000;
 
-const STOP_LIMIT_PERCENT = 1;
-const TEST_FACTOR = 20;
-const RECV_WINDOW = 20000;
+const STOP_LIMIT_PERCENT = 0.65; // Percentage above/below current price to set stop loss
+const RECV_WINDOW = 20000;       // Time (ms) to wait for response from Binance server
+const LOT_SIZE_QTY = 3;          // Highest precision Binance allows for quantities
+const LOT_SIZE_PRICE = 6;        // Highest precision Binance allows for price/limit
+const QTY_FACTOR = 20;           // Total balance is divided by this when setting quantity on orders
 
 var balances = [];
 
@@ -37,7 +39,7 @@ binanceAPI.getAccountInfo(RECV_WINDOW).then( (res, err) =>
     // ROUTES
     app.post("/", (req, res) => 
     {
-        if (res.statusCode != 200) { console.error("ERROR: Trading View POST failed. Response code: " + res.statusCode); }
+        if (res.statusCode != 200) { console.error(new Date(Date.now()).toISOString() + ": ERROR - TradingView POST failed. Response code: " + res.statusCode); }
 
         else if (req.body.time && req.body.currency) 
         { 
@@ -46,12 +48,12 @@ binanceAPI.getAccountInfo(RECV_WINDOW).then( (res, err) =>
             const ticker = req.body.currency;
             let crossType = "", found = "";
 
-            // EMA CROSS - When EMA 10 crosses up EMA 20, it's a bullish cross (and vice versa)
+            // INDICATOR CROSS ("BULL" or "BEAR")
             if (req.body.crossType) 
             { 
                 crossType = req.body.crossType; 
 
-                // BULLISH
+                // BULLISH //
                 if (crossType === "BULL")
                 {
                     console.info("\n" + new Date(Date.now()).toISOString() + ": " + ticker + " " + time_interval + " BULL Cross");
@@ -78,19 +80,20 @@ binanceAPI.getAccountInfo(RECV_WINDOW).then( (res, err) =>
                                         {
                                             if (cancelRes) 
                                             { 
-                                                // Place a SELL side Stop Limit order at current price - 1%
-                                                let stopLimit = priceData.price - ((priceData.price / 100.0) * STOP_LIMIT_PERCENT);
-                                                let qty = (getBalanceBySymbol(ticker) / TEST_FACTOR).toFixed(3);
-                                                
-                                                binanceAPI.postOrder(ticker + "BTC", "SELL", "STOP_LOSS_LIMIT", "GTC", qty, stopLimit.toFixed(6), (stopLimit + 0.00001).toFixed(6), RECV_WINDOW).then( (limitRes) => 
-                                                { 
-                                                    if (limitRes)
-                                                    {
-                                                        // Put in a BUY order at Market price
-                                                        let qty_btc = (getBalanceBySymbol("BTC") / TEST_FACTOR).toFixed(3);
-                                                        binanceAPI.postOrder(ticker + "BTC", "BUY", "MARKET", "", qty_btc, 0, 0, RECV_WINDOW).then( (buyRes) => 
-                                                        {
-                                                            if (buyRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Bought " + ticker + " @ " + priceData.price + ". Set Stop Loss @ " + stopLimit); }
+                                                // Put in a BUY order at Market price
+                                                let qty2 = (getBalanceBySymbol("BTC") / QTY_FACTOR).toFixed(LOT_SIZE_QTY);
+                                                binanceAPI.postOrder(ticker + "BTC", "BUY", "MARKET", "", qty2, 0, 0, RECV_WINDOW).then( (buyRes) => 
+                                                {
+                                                    if (buyRes) 
+                                                    {  
+                                                        // Place a SELL side Stop Limit order
+                                                        let priceLimit = (priceData.price - ((priceData.price / 100.0) * STOP_LIMIT_PERCENT)).toFixed(LOT_SIZE_PRICE);
+                                                        let stopLimit = (priceLimit + 0.00001).toFixed(LOT_SIZE_PRICE);
+                                                        let qty = (getBalanceBySymbol(ticker) / QTY_FACTOR).toFixed(LOT_SIZE_QTY);
+                                                        
+                                                        binanceAPI.postOrder(ticker + "BTC", "SELL", "STOP_LOSS_LIMIT", "GTC", qty, priceLimit, stopLimit, RECV_WINDOW).then( (limitRes) => 
+                                                        { 
+                                                            if (limitRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Bought " + ticker + " @ " + priceData.price + ". Set Stop Loss @ " + priceLimit); }
                                                         });
                                                     }
                                                 });
@@ -116,28 +119,20 @@ binanceAPI.getAccountInfo(RECV_WINDOW).then( (res, err) =>
                         {   
                             binanceAPI.getCurrentPrice(ticker + "BTC").then( (priceData) => 
                             {
-                                // Place a SELL side Stop Limit order at current price - 1%
-                                let stopLimit = priceData.price - ((priceData.price / 100.0) * STOP_LIMIT_PERCENT);
-                                let qty = (getBalanceBySymbol(ticker) / TEST_FACTOR).toFixed(3);
+                                // Put in a BUY order at Market price
+                                let qty2 = (getBalanceBySymbol("BTC") / QTY_FACTOR).toFixed(LOT_SIZE_QTY);
+                                binanceAPI.postOrder(ticker + "BTC", "BUY", "MARKET", "", qty2, 0, 0, RECV_WINDOW).then( (buyRes) => 
+                                {
+                                    if (buyRes) 
+                                    {  
+                                        // Place a SELL side Stop Limit order
+                                        let priceLimit = (priceData.price - ((priceData.price / 100.0) * STOP_LIMIT_PERCENT)).toFixed(LOT_SIZE_PRICE);
+                                        let stopLimit = (priceLimit + 0.00001).toFixed(LOT_SIZE_PRICE);
+                                        let qty = (getBalanceBySymbol(ticker) / QTY_FACTOR).toFixed(LOT_SIZE_QTY);
 
-                                binanceAPI.postOrder(ticker + "BTC", "SELL", "STOP_LOSS_LIMIT", "GTC", qty, stopLimit.toFixed(6), (stopLimit + 0.00001).toFixed(6), RECV_WINDOW).then( (limitRes) => 
-                                { 
-                                    if (limitRes)
-                                    {
-                                        // Put in a BUY order at Market price
-                                        let qty_btc = (getBalanceBySymbol("BTC") / TEST_FACTOR).toFixed(3);
-                                        binanceAPI.postOrder(ticker + "BTC", "BUY", "MARKET", "", qty_btc, 0, 0, RECV_WINDOW).then( (buyRes) => 
-                                        {
-                                            if (buyRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Bought " + ticker + " @ " + priceData.price + ". Set Stop Loss @ " + stopLimit); }
-                                            
-                                            // If BUY order fails for some reason (no BTC?), cancel the previous limit order
-                                            else
-                                            {
-                                                binanceAPI.cancelOrder(ticker + "BTC", JSON.parse(limitRes).orderId, RECV_WINDOW).then( (cancelRes) => 
-                                                {
-                                                    if (cancelRes) { console.info(new Date(Date.now()).toISOString() + ": " + ticker + " BUY failed! Cancelled Stop Limit order."); }
-                                                });
-                                            }
+                                        binanceAPI.postOrder(ticker + "BTC", "SELL", "STOP_LOSS_LIMIT", "GTC", qty, priceLimit, stopLimit, RECV_WINDOW).then( (limitRes) => 
+                                        { 
+                                            if (limitRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Bought " + ticker + " @ " + priceData.price + ". Set Stop Loss @ " + priceLimit); }
                                         });
                                     }
                                 });
@@ -146,7 +141,7 @@ binanceAPI.getAccountInfo(RECV_WINDOW).then( (res, err) =>
                     });  
                 }
 
-                // BEARISH
+                // BEARISH //
                 else if (crossType === "BEAR")
                 {
                     console.info("\n" + new Date(Date.now()).toISOString() + ": " + ticker + " " + time_interval + " BEAR Cross");
@@ -173,19 +168,20 @@ binanceAPI.getAccountInfo(RECV_WINDOW).then( (res, err) =>
                                         {
                                             if (cancelRes) 
                                             { 
-                                                // Place a BUY side Stop Limit order at current price + 1%
-                                                let stopLimit = priceData.price + ((priceData.price / 100.0) * STOP_LIMIT_PERCENT);
-                                                let qty_btc = (getBalanceBySymbol("BTC") / TEST_FACTOR).toFixed(3);
+                                                // Put in a SELL order for BTC at Market price
+                                                let qty = (getBalanceBySymbol(ticker) / QTY_FACTOR).toFixed(LOT_SIZE_QTY);
+                                                binanceAPI.postOrder(ticker + "BTC", "SELL", "MARKET", "", qty, 0, 0, RECV_WINDOW).then( (sellRes) => 
+                                                {
+                                                    if (sellRes) 
+                                                    {  
+                                                        // Place a BUY side Stop Limit order
+                                                        let priceLimit = (priceData.price + ((priceData.price / 100.0) * STOP_LIMIT_PERCENT)).toFixed(LOT_SIZE_PRICE);
+                                                        let stopLimit = (priceLimit - 0.00001).toFixed(LOT_SIZE_PRICE);
+                                                        let qty2 = (getBalanceBySymbol("BTC") / QTY_FACTOR).toFixed(LOT_SIZE_QTY);
 
-                                                binanceAPI.postOrder(ticker + "BTC", "BUY", "STOP_LOSS_LIMIT", "GTC", qty_btc, stopLimit.toFixed(6), (stopLimit - 0.00001).toFixed(6), RECV_WINDOW).then( (limitRes) => 
-                                                { 
-                                                    if (limitRes)
-                                                    {
-                                                        // Put in a SELL order for BTC at Market price
-                                                        let qty = (getBalanceBySymbol(ticker) / TEST_FACTOR).toFixed(3);
-                                                        binanceAPI.postOrder(ticker + "BTC", "SELL", "MARKET", "", qty, 0, 0, RECV_WINDOW).then( (sellRes) => 
-                                                        {
-                                                            if (sellRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Sold " + ticker +  " @ " + priceData.price + ". Set Stop Loss @ " + stopLimit); }
+                                                        binanceAPI.postOrder(ticker + "BTC", "BUY", "STOP_LOSS_LIMIT", "GTC", qty2, priceLimit, stopLimit, RECV_WINDOW).then( (limitRes) => 
+                                                        { 
+                                                            if (limitRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Sold " + ticker +  " @ " + priceData.price + ". Set Stop Loss @ " + priceLimit); }
                                                         });
                                                     }
                                                 });
@@ -211,28 +207,20 @@ binanceAPI.getAccountInfo(RECV_WINDOW).then( (res, err) =>
                         {   
                             binanceAPI.getCurrentPrice(ticker + "BTC").then( (priceData) => 
                             {
-                                // Place a BUY side Stop Limit order at current price + 1%
-                                let stopLimit = priceData.price + ((priceData.price / 100.0) * STOP_LIMIT_PERCENT);
-                                let qty_btc = (getBalanceBySymbol("BTC") / TEST_FACTOR).toFixed(3);
+                                // Put in a SELL order for BTC at Market price
+                                let qty = (getBalanceBySymbol(ticker) / QTY_FACTOR).toFixed(LOT_SIZE_QTY);
+                                binanceAPI.postOrder(ticker + "BTC", "SELL", "MARKET", "", qty, 0, 0, RECV_WINDOW).then( (sellRes) => 
+                                {
+                                    if (sellRes) 
+                                    {  
+                                        // Place a BUY side Stop Limit order
+                                        let priceLimit = (priceData.price + ((priceData.price / 100.0) * STOP_LIMIT_PERCENT)).toFixed(LOT_SIZE_PRICE);
+                                        let stopLimit = (priceLimit - 0.00001).toFixed(LOT_SIZE_PRICE);
+                                        let qty2 = (getBalanceBySymbol("BTC") / QTY_FACTOR).toFixed(LOT_SIZE_QTY);
 
-                                binanceAPI.postOrder(ticker + "BTC", "BUY", "STOP_LOSS_LIMIT", "GTC", qty_btc, stopLimit.toFixed(6), (stopLimit - 0.00001).toFixed(6), RECV_WINDOW).then( (limitRes) => 
-                                { 
-                                    if (limitRes)
-                                    {
-                                        // Put in a SELL order for BTC at Market price
-                                        let qty = (getBalanceBySymbol(ticker) / TEST_FACTOR).toFixed(3);
-                                        binanceAPI.postOrder(ticker + "BTC", "SELL", "MARKET", "", qty, 0, 0, RECV_WINDOW).then( (sellRes) => 
-                                        {
-                                            if (sellRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Sold " + ticker + " @ " + priceData.price + ". Set Stop Loss @ " + stopLimit); }
-                                            
-                                            // If SELL order fails for some reason, cancel the previous limit order
-                                            else
-                                            {
-                                                binanceAPI.cancelOrder(ticker + "BTC", JSON.parse(limitRes).orderId, RECV_WINDOW).then( (cancelRes) => 
-                                                {
-                                                    if (cancelRes) { console.info(new Date(Date.now()).toISOString() + ": " + ticker + " SELL failed! Cancelled Stop Limit order."); }
-                                                });
-                                            }
+                                        binanceAPI.postOrder(ticker + "BTC", "BUY", "STOP_LOSS_LIMIT", "GTC", qty2, priceLimit, stopLimit, RECV_WINDOW).then( (limitRes) => 
+                                        { 
+                                            if (limitRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Sold " + ticker + " @ " + priceData.price + ". Set Stop Loss @ " + stopLimit); }
                                         });
                                     }
                                 });
