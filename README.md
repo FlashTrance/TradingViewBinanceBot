@@ -5,11 +5,12 @@ Prerequisites
 -------------
 * Binance account and API keys, stored in api-config.json.
 * Paid TradingView account is required to use webhook alerts. 
-* Alerts need to be set up to send JSON messages with the following key: "time" (time interval, e.g. "5m"), "base" (1st currency in trading pair), "quote" (2nd currency in trading pair), and "crossType" ("BULL" or "BEAR", indicating  which type of orders to trigger on Binance).
+* Alerts need to be set up to send JSON messages with the following keys: "time" (time interval, e.g. "5m"), "base" (1st currency in trading pair), "quote" (2nd currency in trading pair), and "crossType" ("BULL" or "BEAR", indicating  which type of orders to trigger on Binance).
 * REST Server needs to be accessible by TradingView's requests. For testing, localhost with [ngrok](https://ngrok.com/) or [PageKite](https://pagekite.net/) works fine. Probably a good idea to only allow [TradingView's IPs](https://www.tradingview.com/support/solutions/43000529348-about-webhooks/) in any case.
 
 To-Do
 ------
+* Have not been taking "stepSize" into account, so buying back the base currency is broken. Will need to convert quote to base and then round it to the stepSize.
 * Clean up code and make it less redundant.
 * Thoroughly test functionality/debug by running program for a few days and checking out console logs and Binance order history.
 * <del>Abstract the "BTC" stuff out and replace it with another value from the TradingView alerts so this works with any trading pair.</del>
