@@ -14,7 +14,7 @@ const MAJOR_STEP_SIZES = {       // Step sizes for major quote assets
     "USDT": 0.01 
 };
 const RECV_WINDOW = 20000;       // Time (ms) to wait for response from Binance server       
-const QTY_FACTOR = 30;           // Total balance is divided by this when setting quantity on orders
+const QTY_FACTOR = 20;           // Total balance is divided by this when setting quantity on orders
 
 var balances = [];
 
@@ -45,8 +45,8 @@ updateBalances().then( (balanceRes) =>
         { 
             // Retrieve data from request body
             const time_interval = req.body.time;
-            const baseCur = req.body.base.toString();
-            const quoteCur = req.body.quote.toString();
+            const baseCur = req.body.base;
+            const quoteCur = req.body.quote;
             let crossType = "", found = "";
 
             // INDICATOR CROSS ("BULL" or "BEAR")
@@ -57,7 +57,7 @@ updateBalances().then( (balanceRes) =>
                 // BULLISH //
                 if (crossType === "BULL")
                 {
-                    console.info("\n" + new Date(Date.now()).toISOString() + ": " + baseCur + " " + time_interval + " BULL Cross");
+                    console.info("\n" + new Date(Date.now()).toISOString() + ": " + baseCur + quoteCur + " " + time_interval + " BULL Cross");
 
                     // Check if we have any open Stop Limit orders...
                     binanceAPI.getOpenOrders(baseCur + quoteCur, RECV_WINDOW).then( (orders) => 
@@ -104,7 +104,7 @@ updateBalances().then( (balanceRes) =>
                 // BEARISH //
                 else if (crossType === "BEAR")
                 {
-                    console.info("\n" + new Date(Date.now()).toISOString() + ": " + baseCur + " " + time_interval + " BEAR Cross");
+                    console.info("\n" + new Date(Date.now()).toISOString() + ": " + baseCur + quoteCur + " " + time_interval + " BEAR Cross");
 
                     // Check if we have any open Stop Limit orders...
                     binanceAPI.getOpenOrders(baseCur + quoteCur, RECV_WINDOW).then( (orders) => 
@@ -180,17 +180,19 @@ async function placeOrderAndStopLoss(baseCur, quoteCur, currentPrice, marketSide
     if (marketSide === "SELL")     
     { 
         stopSide = "BUY"; 
-        market_qty = truncateFloat((getBalanceBySymbol(baseCur) / QTY_FACTOR), stepBaseDec);
+        market_qty = getBalanceBySymbol(baseCur) / QTY_FACTOR;
         priceLimit = currentPrice + ((currentPrice / 100.0) * STOP_LIMIT_PERCENT);
         stopLimit = truncateFloat((priceLimit - stepSizeQuote), stepQuoteDec);
     }
     else if (marketSide === "BUY") 
     { 
         stopSide = "SELL"; 
-        market_qty = truncateFloat((getBalanceBySymbol(quoteCur) / currentPrice), stepBaseDec);
+        market_qty = getBalanceBySymbol(quoteCur) / currentPrice;
         priceLimit = currentPrice - ((currentPrice / 100.0) * STOP_LIMIT_PERCENT);
         stopLimit = truncateFloat((priceLimit + stepSizeQuote), stepQuoteDec);
     }
+    market_qty = truncateFloat(market_qty, stepBaseDec);
+    priceLimit = truncateFloat(priceLimit, stepQuoteDec);
 
     // Put in a MARKET order at current price
     binanceAPI.postOrder(baseCur + quoteCur, marketSide, "MARKET", "", market_qty, 0, 0, RECV_WINDOW).then( (sellRes) => 
@@ -203,11 +205,11 @@ async function placeOrderAndStopLoss(baseCur, quoteCur, currentPrice, marketSide
                 balances = balanceRes;
 
                 // Note: For BUY-side Stop Limit orders, we need to convert quote currency amount into base currency amount
-                if (marketSide === "SELL") { limit_qty = truncateFloat((getBalanceBySymbol(quoteCur) / currentPrice), stepBaseDec); }
-                else                       { limit_qty = truncateFloat((getBalanceBySymbol(baseCur) / QTY_FACTOR), stepBaseDec); }
+                if (marketSide === "SELL") { limit_qty = getBalanceBySymbol(quoteCur) / currentPrice; }
+                else                       { limit_qty = getBalanceBySymbol(baseCur) / QTY_FACTOR; }
+                limit_qty = truncateFloat(limit_qty, stepBaseDec); 
 
                 // Place a Stop Limit order based on STOP_LIMIT_PERCENT
-                priceLimit = truncateFloat(priceLimit, stepQuoteDec);
                 binanceAPI.postOrder(baseCur + quoteCur, stopSide, "STOP_LOSS_LIMIT", "GTC", limit_qty, priceLimit, stopLimit, RECV_WINDOW).then( (limitRes) => 
                 { 
                     if (limitRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Placed a " + marketSide + " order @ ~" + currentPrice + ". Set Stop Loss @ " + priceLimit); }
