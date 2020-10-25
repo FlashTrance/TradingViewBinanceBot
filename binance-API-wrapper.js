@@ -113,7 +113,7 @@ const postOrder = function postOrder(symbol, side, type, timeInForce, quantity, 
                 {
                     if (req.status != 200 && req.status != 0) 
                     { 
-                        reject("ERROR (postOrder): Request to Binance API failed! Response: " + req.responseText); 
+                        reject(new Date(Date.now()).toISOString() + ": ERROR (postOrder): " + req.responseText); 
                     }
                 }
 
@@ -121,7 +121,7 @@ const postOrder = function postOrder(symbol, side, type, timeInForce, quantity, 
                 req.send();
             }
         });
-    }).catch( (err) => { }); // Log "err" here for debugging
+    }).catch( (err) => { console.error(err); }); // Log "err" here for debugging
 };
 
 

@@ -7,14 +7,15 @@ const binanceAPI = require("./binance-API-wrapper.js");
 // GLOBAL
 const PORT = process.env.PORT || 3000;
 
-const STOP_LIMIT_PERCENT = 0.65; // Percentage above/below current price to set stop loss
+const BINANCE_FEE = 0.001;
+const STOP_LIMIT_PERCENT = 0.50; // Percentage above/below current price to set stop loss
 const MAJOR_STEP_SIZES = {       // Step sizes for major quote assets
     "BTC": 0.000001, 
     "ETH": 0.000001, 
     "USDT": 0.01 
 };
 const RECV_WINDOW = 20000;       // Time (ms) to wait for response from Binance server       
-const QTY_FACTOR = 20;           // Total balance is divided by this when setting quantity on orders
+const QTY_FACTOR = 5;            // Total balance is divided by this when setting quantity on orders
 
 var balances = [];
 
@@ -80,7 +81,7 @@ updateBalances().then( (balanceRes) =>
                                         // Cancel the old BUY Stop Limit
                                         binanceAPI.cancelOrder(baseCur + quoteCur, found.orderId, RECV_WINDOW).then ( (cancelRes) => 
                                         {
-                                            if (cancelRes) { placeOrderAndStopLoss(baseCur, quoteCur, currentPrice, "BUY"); }
+                                            if (cancelRes) { placeOrderAndStopLoss(baseCur, quoteCur, "BUY"); }
                                         });
                                     }
 
@@ -91,13 +92,7 @@ updateBalances().then( (balanceRes) =>
                         }
                     
                         // There are no open orders for this trading pair, place a BUY order
-                        else
-                        {   
-                            binanceAPI.getCurrentPrice(baseCur + quoteCur).then( (priceData) => 
-                            {
-                                placeOrderAndStopLoss(baseCur, quoteCur, parseFloat(priceData.price), "BUY");
-                            });
-                        }  
+                        else { placeOrderAndStopLoss(baseCur, quoteCur, "BUY"); }  
                     });  
                 }
 
@@ -127,7 +122,7 @@ updateBalances().then( (balanceRes) =>
                                         // Cancel the old SELL Stop Limit
                                         binanceAPI.cancelOrder(baseCur + quoteCur, found.orderId, RECV_WINDOW).then ( (cancelRes) => 
                                         {
-                                            if (cancelRes) { placeOrderAndStopLoss(baseCur, quoteCur, currentPrice, "SELL"); }
+                                            if (cancelRes) { placeOrderAndStopLoss(baseCur, quoteCur, "SELL"); }
                                         });
                                     }
 
@@ -138,13 +133,7 @@ updateBalances().then( (balanceRes) =>
                         }
                     
                         // There are no open orders for this trading pair, place a SELL order
-                        else
-                        {   
-                            binanceAPI.getCurrentPrice(baseCur + quoteCur).then( (priceData) => 
-                            {
-                                placeOrderAndStopLoss(baseCur, quoteCur, parseFloat(priceData.price), "SELL");
-                            });
-                        }  
+                        else { placeOrderAndStopLoss(baseCur, quoteCur, "SELL"); }  
                     });
                 }
             }
@@ -161,11 +150,11 @@ updateBalances().then( (balanceRes) =>
 ///////////////
 
 // placeOrderAndStopLoss() - Place the appropriate buy/sell Market order and Stop Limit order
-async function placeOrderAndStopLoss(baseCur, quoteCur, currentPrice, marketSide)
+async function placeOrderAndStopLoss(baseCur, quoteCur, marketSide)
 {
-    let priceLimit = 0.0, stopLimit = 0.0, market_qty = 0.0, limit_qty = 0.0;
-    let stepSizeBase = 0, stepSizeQuote = 0, stepBaseDec = 0, stepQuoteDec = 0;;
-    let stopSide = "";
+    var priceLimit = 0.0, stopLimit = 0.0, market_qty = 0.0, limit_qty = 0.0;
+    var stepSizeBase = 0, stepSizeQuote = 0, stepBaseDec = 0, stepQuoteDec = 0;;
+    var stopSide = "";
 
     // Get stepSize of base and quote assets so we know what precision to use in our order
     if (!(baseCur in MAJOR_STEP_SIZES)) { stepSizeBase = await getStepSize(baseCur, quoteCur); }
@@ -176,59 +165,67 @@ async function placeOrderAndStopLoss(baseCur, quoteCur, currentPrice, marketSide
     stepBaseDec = getNumDecimals(stepSizeBase);
     stepQuoteDec = getNumDecimals(stepSizeQuote);
 
+    // Get the current ticker price
+    let current_price = await binanceAPI.getCurrentPrice(baseCur + quoteCur);
+    current_price = parseFloat(current_price.price);
+
     // Setup order values based on the market side (and consequently the "crossing" type)
     if (marketSide === "SELL")     
     { 
         stopSide = "BUY"; 
         market_qty = getBalanceBySymbol(baseCur) / QTY_FACTOR;
-        priceLimit = currentPrice + ((currentPrice / 100.0) * STOP_LIMIT_PERCENT);
+        priceLimit = current_price + ((current_price / 100.0) * STOP_LIMIT_PERCENT);
         stopLimit = truncateFloat((priceLimit - stepSizeQuote), stepQuoteDec);
     }
     else if (marketSide === "BUY") 
     { 
         stopSide = "SELL"; 
-        market_qty = getBalanceBySymbol(quoteCur) / currentPrice;
-        priceLimit = currentPrice - ((currentPrice / 100.0) * STOP_LIMIT_PERCENT);
+        market_qty = getBalanceBySymbol(quoteCur) / current_price;
+        priceLimit = current_price - ((current_price / 100.0) * STOP_LIMIT_PERCENT);
         stopLimit = truncateFloat((priceLimit + stepSizeQuote), stepQuoteDec);
     }
     market_qty = truncateFloat(market_qty, stepBaseDec);
     priceLimit = truncateFloat(priceLimit, stepQuoteDec);
 
     // Put in a MARKET order at current price
-    binanceAPI.postOrder(baseCur + quoteCur, marketSide, "MARKET", "", market_qty, 0, 0, RECV_WINDOW).then( (sellRes) => 
+    let sellRes = await binanceAPI.postOrder(baseCur + quoteCur, marketSide, "MARKET", "", market_qty, 0, 0, RECV_WINDOW);
+    if (sellRes) 
     {
-        if (sellRes) 
-        {  
-            // Get new account balance information after placing Market order
-            updateBalances().then( (balanceRes) => 
-            {
-                balances = balanceRes;
+        // Get updated account balance information after placing Market order
+        let balanceRes = await updateBalances();
+        balances = balanceRes;
 
-                // Note: For BUY-side Stop Limit orders, we need to convert quote currency amount into base currency amount
-                if (marketSide === "SELL") { limit_qty = getBalanceBySymbol(quoteCur) / currentPrice; }
-                else                       { limit_qty = getBalanceBySymbol(baseCur) / QTY_FACTOR; }
-                limit_qty = truncateFloat(limit_qty, stepBaseDec); 
+        // Running these here to shave off as much time as possible between getting updated price and everything that comes after
+        let new_quote_amt = getBalanceBySymbol(quoteCur);
+        let new_base_amt = getBalanceBySymbol(baseCur);
 
-                // Place a Stop Limit order based on STOP_LIMIT_PERCENT
-                binanceAPI.postOrder(baseCur + quoteCur, stopSide, "STOP_LOSS_LIMIT", "GTC", limit_qty, priceLimit, stopLimit, RECV_WINDOW).then( (limitRes) => 
-                { 
-                    if (limitRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Placed a " + marketSide + " order @ ~" + currentPrice + ". Set Stop Loss @ " + priceLimit); }
+        // Get updated ticker price
+        let new_price = await binanceAPI.getCurrentPrice(baseCur + quoteCur);
+        new_price = parseFloat(new_price.price);
 
-                    // If the limit order fails, rebuy/sell to be on the safe side
-                    else
-                    {
-                        binanceAPI.postOrder(baseCur + quoteCur, stopSide, "MARKET", "", market_qty, 0, 0, RECV_WINDOW).then( (panicRes) => 
-                        {
-                            if (panicRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Failed to place Stop Limit order! Rebought/sold Market order."); }
-                        });
-                    }
-                });
-            });
+        // Note: For BUY-side Stop Limit orders, we need to convert quote currency amount into base currency amount
+        if (marketSide === "SELL") { limit_qty = new_quote_amt / new_price; }
+        else                       { limit_qty = new_base_amt / QTY_FACTOR; }
+ 
+        // Subtract off fees from quantity (and an additional "stepSize" for consistency's sake)
+        limit_qty -= (limit_qty * BINANCE_FEE);
+        limit_qty -= stepSizeBase;
+        limit_qty = truncateFloat(limit_qty, stepBaseDec);
+
+        // Place a Stop Limit order based on STOP_LIMIT_PERCENT
+        let limitRes = await binanceAPI.postOrder(baseCur + quoteCur, stopSide, "STOP_LOSS_LIMIT", "GTC", limit_qty, priceLimit, stopLimit, RECV_WINDOW);
+        if (limitRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Placed a " + marketSide + " order @ " + new_price + ". Set Stop Loss @ " + priceLimit); }
+        
+        // If the limit order fails, rebuy/sell to be on the safe side
+        else
+        {
+            let panicRes = await binanceAPI.postOrder(baseCur + quoteCur, stopSide, "MARKET", "", market_qty, 0, 0, RECV_WINDOW);
+            if (panicRes) { console.info(new Date(Date.now()).toISOString() + ": " + "Failed to place Stop Limit order! Rebought/sold Market order."); }
         }
+    }  
 
-        // Market order failed (probably we don't have enough of the required currency)
-        else { console.info(new Date(Date.now()).toISOString() + ": " + "Failed to place " + marketSide + " order. Check account balance."); }
-    });
+    // Market order failed (we probably don't have enough of the required currency)
+    else { console.info(new Date(Date.now()).toISOString() + ": " + "Failed to place " + marketSide + " order. Check account balance."); }
 }
 
 
