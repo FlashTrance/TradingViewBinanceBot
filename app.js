@@ -7,7 +7,7 @@ const binanceAPI = require("./binance-API-wrapper.js");
 // GLOBAL
 const PORT = process.env.PORT || 3000;
 
-const BINANCE_FEE = 0.001;
+const BINANCE_FEE = 0.001;       // Binance trading fee amount
 const STOP_LIMIT_PERCENT = 0.50; // Percentage above/below current price to set stop loss
 const MAJOR_STEP_SIZES = {       // Step sizes for major quote assets
     "BTC": 0.000001, 
@@ -184,6 +184,7 @@ async function placeOrderAndStopLoss(baseCur, quoteCur, marketSide)
         priceLimit = current_price - ((current_price / 100.0) * STOP_LIMIT_PERCENT);
         stopLimit = truncateFloat((priceLimit + stepSizeQuote), stepQuoteDec);
     }
+    market_qty -= (market_qty * BINANCE_FEE);
     market_qty = truncateFloat(market_qty, stepBaseDec);
     priceLimit = truncateFloat(priceLimit, stepQuoteDec);
 
