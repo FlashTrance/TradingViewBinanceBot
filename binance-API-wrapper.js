@@ -121,7 +121,7 @@ const postOrder = function postOrder(symbol, side, type, timeInForce, quantity, 
                 req.send();
             }
         });
-    }).catch( (err) => { console.error(err); }); // Log "err" here for debugging
+    }).catch( (err) => { }); // Log "err" here for debugging
 };
 
 
