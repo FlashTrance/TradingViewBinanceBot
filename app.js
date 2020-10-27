@@ -210,7 +210,7 @@ async function placeOrderAndStopLoss(baseCur, quoteCur, marketSide)
                 num_tries += 1;
                 market_qty -= stepSizeBase;
                 market_qty = truncateFloat(market_qty, stepBaseDec);
-                console.info(new Date(Date.now()).toISOString() + ": " + "Retrying Market order with lower quantity: " + market_qty + " " + baseCur);
+                // console.info(new Date(Date.now()).toISOString() + ": " + "Retrying Market order with lower quantity: " + market_qty + " " + baseCur);
             }
 
             // Market order failed (we probably don't have enough of the required currency)
@@ -260,7 +260,7 @@ async function placeOrderAndStopLoss(baseCur, quoteCur, marketSide)
                     num_tries += 1;
                     limit_qty -= stepSizeBase;
                     limit_qty = truncateFloat(limit_qty, stepBaseDec);
-                    console.info(new Date(Date.now()).toISOString() + ": " + "Retrying Stop Limit order with lower quantity: " + limit_qty + " " + baseCur);
+                    // console.info(new Date(Date.now()).toISOString() + ": " + "Retrying Stop Limit order with lower quantity: " + limit_qty + " " + baseCur);
                 }
 
                 // Something else is going wrong, rebuy/sell the Market order to be safe
