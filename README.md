@@ -1,5 +1,7 @@
 # Trading View Binance Bot
-WIP project. Handles POST requests from [TradingView](https://www.tradingview.com/) alert webhooks and uses them to trigger [Binance API](https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md) calls to make buy/sell orders (and set stop losses) based on any simple "crossing" strategy on short timeframes (i.e. when EMA 10 crosses up EMA 20, it's a "bullish" cross, so we BUY and wait for a "bearish" cross).
+Abandoned when I realized trading is a hopeless endeavor! Logic all works; good luck with the API however, it was quite finicky when I was using it.
+
+Handles POST requests from [TradingView](https://www.tradingview.com/) alert webhooks and uses them to trigger [Binance API](https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md) calls to make buy/sell orders (and set stop losses) based on any simple "crossing" strategy on short timeframes (i.e. when EMA 10 crosses up EMA 20, it's a "bullish" cross, so we BUY and wait for a "bearish" cross).
 
 
 Prerequisites
